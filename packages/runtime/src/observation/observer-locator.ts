@@ -107,7 +107,17 @@ export class ObserverLocator implements IObserverLocator {
   }
 
   public getObserver(flags: LifecycleFlags, obj: IObservable|IBindingContext, propertyName: string): AccessorOrObserver {
-    if (flags & LifecycleFlags.proxyStrategy && typeof obj === 'object') {
+    if ((flags & LifecycleFlags.proxyStrategy) > 0
+      && typeof obj === 'object'
+      // There are many object that won't work with Proxy.
+      // For those objects, there're two scenarios: observing observable properties, and observing non-observable properties
+      // An example of observable property would be checked property on <input type=checkbox />
+      // An example of non-observable property would be clientHeight on any element (this actually resolves to dirty checking)
+      // In any way, Aurelia should not, and must not wrap those objects,
+      //    else there will be runtime error when accessing properties that do not work with Proxy.
+      // So leaving it to the targetObserverLocator to determine if Proxy observer should interfer with observation of this object
+      && !this.targetObserverLocator.handles(flags, obj)
+    ) {
       return ProxyObserver.getOrCreate(obj, propertyName) as unknown as AccessorOrObserver; // TODO: fix typings (and ensure proper contracts ofc)
     }
     if (isBindingContext(obj)) {
@@ -115,7 +125,7 @@ export class ObserverLocator implements IObserverLocator {
     }
     let observersLookup = obj.$observers as ObserversLookup;
 
-    if (observersLookup && propertyName in observersLookup) {
+    if (observersLookup != null && propertyName in observersLookup) {
       return observersLookup[propertyName];
     }
 
@@ -144,7 +154,7 @@ export class ObserverLocator implements IObserverLocator {
       return this.targetAccessorLocator.getAccessor(flags, this.scheduler, this.lifecycle, obj, propertyName);
     }
 
-    if (flags & LifecycleFlags.proxyStrategy) {
+    if ((flags & LifecycleFlags.proxyStrategy) === LifecycleFlags.proxyStrategy) {
       return ProxyObserver.getOrCreate(obj, propertyName) as unknown as AccessorOrObserver;
     }
     return new PropertyAccessor(obj, propertyName);
